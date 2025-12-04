@@ -1,14 +1,12 @@
 /* eslint-disable react/no-unknown-property */
 import React, { useMemo } from 'react';
-// CORREÇÃO AQUI: Adicionamos 'type' antes de ThreeEvent para evitar o erro de execução
 import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
-import { shaderMaterial, useTrailTexture } from '@react-three/drei';
+// ADICIONADO: useTexture para carregar a imagem
+import { shaderMaterial, useTrailTexture, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import { extend } from '@react-three/fiber';
 
-// --------------------------------------------------------
-// CONFIGURAÇÃO DOS SHADERS E MATERIAIS
-// --------------------------------------------------------
+// --- CONFIGURAÇÃO DOS FILTROS E SHADERS ---
 
 interface GooeyFilterProps {
   id?: string;
@@ -29,25 +27,29 @@ const GooeyFilter: React.FC<GooeyFilterProps> = ({ id = 'goo-filter', strength =
   );
 };
 
+// --- MUDANÇA PRINCIPAL AQUI NO SHADER ---
 const DotMaterial = shaderMaterial(
   {
     resolution: new THREE.Vector2(),
     mouseTrail: new THREE.Texture(),
+    // REMOVIDO: pixelColor
+    // ADICIONADO: imageTexture para receber a imagem do capacete
+    imageTexture: new THREE.Texture(), 
     gridSize: 100,
-    pixelColor: new THREE.Color('#ffffff')
   },
-  /* glsl vertex shader */ `
+  /* glsl vertex shader (Padrão) */ `
     varying vec2 vUv;
     void main() {
       vUv = uv;
       gl_Position = vec4(position.xy, 0.0, 1.0);
     }
   `,
-  /* glsl fragment shader */ `
+  /* glsl fragment shader (Alterado) */ `
     uniform vec2 resolution;
     uniform sampler2D mouseTrail;
+    // ADICIONADO: uniform para a imagem
+    uniform sampler2D imageTexture; 
     uniform float gridSize;
-    uniform vec3 pixelColor;
     varying vec2 vUv;
 
     vec2 coverUv(vec2 uv) {
@@ -60,17 +62,24 @@ const DotMaterial = shaderMaterial(
       vec2 screenUv = gl_FragCoord.xy / resolution;
       vec2 uv = coverUv(screenUv);
 
-      vec2 gridUv = fract(uv * gridSize);
+      // Calcula o centro do "pixel" da grade
       vec2 gridUvCenter = (floor(uv * gridSize) + 0.5) / gridSize;
 
-      float trail = texture2D(mouseTrail, gridUvCenter).r;
+      // 1. Lê a intensidade do rastro do mouse (0.0 a 1.0)
+      float trailValue = texture2D(mouseTrail, gridUvCenter).r;
 
-      gl_FragColor = vec4(pixelColor, trail);
+      // 2. MUDANÇA: Lê a cor da IMAGEM na posição desse pixel, em vez de uma cor sólida
+      vec4 imgColor = texture2D(imageTexture, gridUvCenter);
+
+      // 3. Calcula a transparência final baseada no rastro E na transparência da própria imagem
+      float finalAlpha = trailValue * imgColor.a;
+
+      // Define a cor final do pixel usando a cor da imagem
+      gl_FragColor = vec4(imgColor.rgb, finalAlpha);
     }
   `
 );
 
-// Registo do material para uso no JSX
 extend({ DotMaterial });
 
 declare global {
@@ -81,9 +90,7 @@ declare global {
   }
 }
 
-// --------------------------------------------------------
-// CENA PRINCIPAL
-// --------------------------------------------------------
+// --- CENA ---
 
 interface SceneProps {
   gridSize: number;
@@ -91,12 +98,17 @@ interface SceneProps {
   maxAge: number;
   interpolate: number;
   easingFunction: (x: number) => number;
-  pixelColor: string;
+  imageSrc: string; // Nova prop obrigatória
 }
 
-function Scene({ gridSize, trailSize, maxAge, interpolate, easingFunction, pixelColor }: SceneProps) {
+function Scene({ gridSize, trailSize, maxAge, interpolate, easingFunction, imageSrc }: SceneProps) {
   const size = useThree(s => s.size);
   const viewport = useThree(s => s.viewport);
+
+  // ADICIONADO: Carregar a textura da imagem passada via prop
+  const imageTexture = useTexture(imageSrc);
+  // Configurar espaço de cor para imagens visíveis
+  imageTexture.colorSpace = THREE.SRGBColorSpace; 
 
   const [trail, onMove] = useTrailTexture({
     size: 512,
@@ -115,26 +127,24 @@ function Scene({ gridSize, trailSize, maxAge, interpolate, easingFunction, pixel
     }
   }, [trail]);
 
-  // Escala para cobrir a tela inteira
   const scale = Math.max(viewport.width, viewport.height) / 2;
 
   return (
     <mesh scale={[scale, scale, 1]} onPointerMove={onMove}>
       <planeGeometry args={[2, 2]} />
+      {/* Passamos a textura da imagem para o material */}
       <dotMaterial
         gridSize={gridSize}
         resolution={[size.width * viewport.dpr, size.height * viewport.dpr]}
         mouseTrail={trail}
-        pixelColor={pixelColor}
+        imageTexture={imageTexture}
         transparent
       />
     </mesh>
   );
 }
 
-// --------------------------------------------------------
-// COMPONENTE EXPORTADO
-// --------------------------------------------------------
+// --- COMPONENTE PRINCIPAL ---
 
 interface PixelTrailProps {
   gridSize?: number;
@@ -145,8 +155,9 @@ interface PixelTrailProps {
   canvasProps?: Partial<React.ComponentProps<typeof Canvas>>;
   glProps?: WebGLContextAttributes & { powerPreference?: string };
   gooeyFilter?: { id: string; strength: number };
-  color?: string;
   className?: string;
+  // ADICIONADO: imageSrc é agora obrigatório, removemos 'color'
+  imageSrc: string; 
 }
 
 export default function PixelTrail({
@@ -162,17 +173,15 @@ export default function PixelTrail({
     alpha: true
   },
   gooeyFilter,
-  color = '#ffffff',
+  imageSrc, // Recebe a imagem
   className = ''
 }: PixelTrailProps) {
-return (
+  return (
     <>
       {gooeyFilter && <GooeyFilter id={gooeyFilter.id} strength={gooeyFilter.strength} />}
       <Canvas
         {...canvasProps}
         gl={glProps}
-        // REMOVIDO: pointer-events-none (para o rastro funcionar)
-        // ADICIONADO: w-full h-full (para garantir tamanho)
         className={`absolute inset-0 w-full h-full ${className}`}
         style={gooeyFilter ? { filter: `url(#${gooeyFilter.id})` } : undefined}
       >
@@ -182,7 +191,7 @@ return (
           maxAge={maxAge}
           interpolate={interpolate}
           easingFunction={easingFunction}
-          pixelColor={color}
+          imageSrc={imageSrc} // Passa para a cena
         />
       </Canvas>
     </>

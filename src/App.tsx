@@ -4,30 +4,26 @@ import './App.css'
 
 function App() {
   return (
-    // Container ocupa toda a tela, fundo preto para contraste
     <div className="relative w-screen h-screen overflow-hidden bg-black">
       
-      {/* CAMADA 1 (Fundo): O Rosto 3D 
-          Z-Index 0. Ocupa tudo.
-      */}
+      {/* CAMADA 1: Fundo 3D */}
       <div className="absolute inset-0 z-0">
         <ParallaxEffect 
           imageSrc="/perfil.png" 
           depthSrc="/pretoebranco.png"
-          threshold={0.03} // Intensidade do movimento
+          helmetSrc="/perfilCapacete.png"
+          // Diminuir threshold para 0.02 ou 0.015 evita que a imagem saia da borda
+          threshold={0.015} 
         />
       </div>
 
-      {/* CAMADA 2 (Frente): O Rastro de Pixel 
-          Z-Index 10. Ocupa tudo.
-          IMPORTANTE: removemos pointer-events-none para ele capturar o rato
-      */}
+      {/* CAMADA 2: Rastro de Pixels (Mostra Capacete) */}
       <div className="absolute inset-0 z-10">
          <PixelTrail 
-           gridSize={30}       // Tamanho do pixel
-           trailSize={0.2}     // Tamanho do rastro
-           color="#ccff00"     // Cor Neon Lando Norris (Importante para ver no fundo claro)
-           maxAge={400}        // Quanto tempo o rastro dura
+           imageSrc="/perfilCapacete.png" // Imagem que aparece nos "pixels"
+           gridSize={40}       
+           trailSize={0.25}     
+           maxAge={500}        
            className="w-full h-full"
          />
       </div>
