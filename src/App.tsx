@@ -1,38 +1,35 @@
-import './App.css'
 import { ParallaxEffect } from './components/ParallaxEffect'
+import PixelTrail from './components/PixelTrail'
+import './App.css'
 
 function App() {
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-8">
+    // Container ocupa toda a tela, fundo preto para contraste
+    <div className="relative w-screen h-screen overflow-hidden bg-black">
       
-      <div className="mb-8 text-center">
-        <h1 className="text-4xl font-bold text-gray-900 mb-2 uppercase tracking-tighter">
-          Lando Norris
-        </h1>
-        <p className="text-gray-500">Depth Map Parallax Effect</p>
-      </div>
-
-      <div className="flex gap-8 items-center justify-center">
-        {/* Renderiza o Efeito 3D */}
+      {/* CAMADA 1 (Fundo): O Rosto 3D 
+          Z-Index 0. Ocupa tudo.
+      */}
+      <div className="absolute inset-0 z-0">
         <ParallaxEffect 
           imageSrc="/perfil.png" 
           depthSrc="/pretoebranco.png"
-          width="400px"  // Ajuste o tamanho conforme necessário
-          height="500px" // Ajuste o tamanho conforme necessário
-          threshold={0.05} // Aumente para exagerar o movimento, diminua para suavizar
+          threshold={0.03} // Intensidade do movimento
         />
-        
-        {/* Exemplo de dados ao lado, estilo o site dele */}
-        <div className="hidden md:block space-y-4 text-left">
-          <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 w-48">
-            <span className="text-xs font-bold text-gray-400 block mb-1">TEAM</span>
-            <span className="text-lg font-bold">MCLAREN</span>
-          </div>
-          <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 w-48">
-            <span className="text-xs font-bold text-gray-400 block mb-1">COUNTRY</span>
-            <span className="text-lg font-bold">UK</span>
-          </div>
-        </div>
+      </div>
+
+      {/* CAMADA 2 (Frente): O Rastro de Pixel 
+          Z-Index 10. Ocupa tudo.
+          IMPORTANTE: removemos pointer-events-none para ele capturar o rato
+      */}
+      <div className="absolute inset-0 z-10">
+         <PixelTrail 
+           gridSize={30}       // Tamanho do pixel
+           trailSize={0.2}     // Tamanho do rastro
+           color="#ccff00"     // Cor Neon Lando Norris (Importante para ver no fundo claro)
+           maxAge={400}        // Quanto tempo o rastro dura
+           className="w-full h-full"
+         />
       </div>
 
     </div>
