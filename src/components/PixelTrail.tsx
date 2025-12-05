@@ -1,13 +1,11 @@
 /* eslint-disable react/no-unknown-property */
-import React, { useMemo } from 'react';
-import { Canvas, useThree, type ThreeEvent } from '@react-three/fiber';
-// ADICIONADO: useTexture para carregar a imagem
+import React, { useMemo, useRef, useEffect } from 'react';
+import { Canvas, useThree, useFrame, type ThreeEvent } from '@react-three/fiber';
 import { shaderMaterial, useTrailTexture, useTexture } from '@react-three/drei';
 import * as THREE from 'three';
 import { extend } from '@react-three/fiber';
 
-// --- CONFIGURAÇÃO DOS FILTROS E SHADERS ---
-
+// --- Filtros ---
 interface GooeyFilterProps {
   id?: string;
   strength?: number;
@@ -27,55 +25,45 @@ const GooeyFilter: React.FC<GooeyFilterProps> = ({ id = 'goo-filter', strength =
   );
 };
 
-// --- MUDANÇA PRINCIPAL AQUI NO SHADER ---
+// --- Shader ---
 const DotMaterial = shaderMaterial(
   {
     resolution: new THREE.Vector2(),
+    imageResolution: new THREE.Vector2(),
     mouseTrail: new THREE.Texture(),
-    // REMOVIDO: pixelColor
-    // ADICIONADO: imageTexture para receber a imagem do capacete
-    imageTexture: new THREE.Texture(), 
-    gridSize: 100,
+    imageTexture: new THREE.Texture(),
   },
-  /* glsl vertex shader (Padrão) */ `
+  /* Vertex */ `
     varying vec2 vUv;
     void main() {
       vUv = uv;
       gl_Position = vec4(position.xy, 0.0, 1.0);
     }
   `,
-  /* glsl fragment shader (Alterado) */ `
+  /* Fragment */ `
     uniform vec2 resolution;
+    uniform vec2 imageResolution;
     uniform sampler2D mouseTrail;
-    // ADICIONADO: uniform para a imagem
     uniform sampler2D imageTexture; 
-    uniform float gridSize;
     varying vec2 vUv;
 
-    vec2 coverUv(vec2 uv) {
-      vec2 s = resolution.xy / max(resolution.x, resolution.y);
-      vec2 newUv = (uv - 0.5) * s + 0.5;
-      return clamp(newUv, 0.0, 1.0);
+    vec2 getCoverUv(vec2 uv, vec2 resolution, vec2 texResolution) {
+      vec2 s = resolution; 
+      vec2 i = texResolution; 
+      float rs = s.x / s.y;
+      float ri = i.x / i.y;
+      vec2 new = rs < ri ? vec2(i.x * s.y / i.y, s.y) : vec2(s.x, i.y * s.x / i.x);
+      vec2 offset = (rs < ri ? vec2((new.x - s.x) / 2.0, 0.0) : vec2(0.0, (new.y - s.y) / 2.0)) / new;
+      return uv * s / new + offset;
     }
 
     void main() {
-      vec2 screenUv = gl_FragCoord.xy / resolution;
-      vec2 uv = coverUv(screenUv);
-
-      // Calcula o centro do "pixel" da grade
-      vec2 gridUvCenter = (floor(uv * gridSize) + 0.5) / gridSize;
-
-      // 1. Lê a intensidade do rastro do mouse (0.0 a 1.0)
-      float trailValue = texture2D(mouseTrail, gridUvCenter).r;
-
-      // 2. MUDANÇA: Lê a cor da IMAGEM na posição desse pixel, em vez de uma cor sólida
-      vec4 imgColor = texture2D(imageTexture, gridUvCenter);
-
-      // 3. Calcula a transparência final baseada no rastro E na transparência da própria imagem
-      float finalAlpha = trailValue * imgColor.a;
-
-      // Define a cor final do pixel usando a cor da imagem
-      gl_FragColor = vec4(imgColor.rgb, finalAlpha);
+      vec2 uv = gl_FragCoord.xy / resolution;
+      float trail = texture2D(mouseTrail, uv).r;
+      vec2 coverUv = getCoverUv(uv, resolution, imageResolution);
+      vec4 imgColor = texture2D(imageTexture, coverUv);
+      float alpha = trail * imgColor.a;
+      gl_FragColor = vec4(imgColor.rgb, alpha);
     }
   `
 );
@@ -90,28 +78,28 @@ declare global {
   }
 }
 
-// --- CENA ---
-
+// --- Cena com Animação Automática ---
 interface SceneProps {
-  gridSize: number;
   trailSize: number;
   maxAge: number;
   interpolate: number;
   easingFunction: (x: number) => number;
-  imageSrc: string; // Nova prop obrigatória
+  imageSrc: string;
 }
 
-function Scene({ gridSize, trailSize, maxAge, interpolate, easingFunction, imageSrc }: SceneProps) {
-  const size = useThree(s => s.size);
-  const viewport = useThree(s => s.viewport);
+function Scene({ trailSize, maxAge, interpolate, easingFunction, imageSrc }: SceneProps) {
+  const { size, viewport } = useThree();
+  const materialRef = useRef<any>(null);
+  
+  // Refs para controlar inatividade
+  const lastInteraction = useRef(Date.now());
+  const isAutoMoving = useRef(false);
 
-  // ADICIONADO: Carregar a textura da imagem passada via prop
   const imageTexture = useTexture(imageSrc);
-  // Configurar espaço de cor para imagens visíveis
-  imageTexture.colorSpace = THREE.SRGBColorSpace; 
+  imageTexture.colorSpace = THREE.SRGBColorSpace;
 
   const [trail, onMove] = useTrailTexture({
-    size: 512,
+    size: 1024, 
     radius: trailSize,
     maxAge: maxAge,
     interpolate: interpolate || 0.1,
@@ -120,22 +108,55 @@ function Scene({ gridSize, trailSize, maxAge, interpolate, easingFunction, image
 
   useMemo(() => {
     if (trail) {
-      trail.minFilter = THREE.NearestFilter;
-      trail.magFilter = THREE.NearestFilter;
-      trail.wrapS = THREE.ClampToEdgeWrapping;
-      trail.wrapT = THREE.ClampToEdgeWrapping;
+      trail.minFilter = THREE.LinearFilter;
+      trail.magFilter = THREE.LinearFilter;
     }
   }, [trail]);
+
+  // Listener Global para resetar o timer de inatividade
+  useEffect(() => {
+    const resetTimer = () => {
+      lastInteraction.current = Date.now();
+      isAutoMoving.current = false;
+    };
+    window.addEventListener('mousemove', resetTimer);
+    return () => window.removeEventListener('mousemove', resetTimer);
+  }, []);
+
+  useFrame((state) => {
+    // Atualizar uniformes
+    if (materialRef.current) {
+      materialRef.current.resolution.set(size.width * viewport.dpr, size.height * viewport.dpr);
+      materialRef.current.imageResolution.set(imageTexture.image.width, imageTexture.image.height);
+    }
+
+    // --- LÓGICA DE MOVIMENTO AUTOMÁTICO (ZIG ZAG) ---
+    const now = Date.now();
+    const idleTime = now - lastInteraction.current;
+
+    // Se estiver inativo por mais de 2 segundos (2000ms)
+    if (idleTime > 2000) {
+      isAutoMoving.current = true;
+      const t = state.clock.elapsedTime;
+
+      // Cria um movimento em onda (Zig Zag suave)
+      // X oscila rápido (esquerda/direita), Y oscila devagar
+      const autoX = 0.5 + Math.sin(t * 1.5) * 0.4; // Vai de 0.1 a 0.9 na tela
+      const autoY = 0.5 + Math.sin(t * 3.0) * 0.15; // Oscila um pouco no meio
+
+      // Simula o evento de movimento para o Trail
+      // O 'as any' é necessário porque estamos a criar um evento falso
+      onMove({ uv: new THREE.Vector2(autoX, autoY) } as any);
+    }
+  });
 
   const scale = Math.max(viewport.width, viewport.height) / 2;
 
   return (
     <mesh scale={[scale, scale, 1]} onPointerMove={onMove}>
       <planeGeometry args={[2, 2]} />
-      {/* Passamos a textura da imagem para o material */}
       <dotMaterial
-        gridSize={gridSize}
-        resolution={[size.width * viewport.dpr, size.height * viewport.dpr]}
+        ref={materialRef}
         mouseTrail={trail}
         imageTexture={imageTexture}
         transparent
@@ -144,10 +165,8 @@ function Scene({ gridSize, trailSize, maxAge, interpolate, easingFunction, image
   );
 }
 
-// --- COMPONENTE PRINCIPAL ---
-
+// --- Componente Principal ---
 interface PixelTrailProps {
-  gridSize?: number;
   trailSize?: number;
   maxAge?: number;
   interpolate?: number;
@@ -156,24 +175,22 @@ interface PixelTrailProps {
   glProps?: WebGLContextAttributes & { powerPreference?: string };
   gooeyFilter?: { id: string; strength: number };
   className?: string;
-  // ADICIONADO: imageSrc é agora obrigatório, removemos 'color'
   imageSrc: string; 
 }
 
 export default function PixelTrail({
-  gridSize = 40,
   trailSize = 0.1,
   maxAge = 250,
   interpolate = 5,
   easingFunction = (x: number) => x,
   canvasProps = {},
   glProps = {
-    antialias: false,
+    antialias: true,
     powerPreference: 'high-performance',
     alpha: true
   },
   gooeyFilter,
-  imageSrc, // Recebe a imagem
+  imageSrc,
   className = ''
 }: PixelTrailProps) {
   return (
@@ -186,12 +203,11 @@ export default function PixelTrail({
         style={gooeyFilter ? { filter: `url(#${gooeyFilter.id})` } : undefined}
       >
         <Scene
-          gridSize={gridSize}
           trailSize={trailSize}
           maxAge={maxAge}
           interpolate={interpolate}
           easingFunction={easingFunction}
-          imageSrc={imageSrc} // Passa para a cena
+          imageSrc={imageSrc}
         />
       </Canvas>
     </>

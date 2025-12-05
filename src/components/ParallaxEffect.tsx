@@ -8,7 +8,6 @@ const ParallaxMaterial = shaderMaterial(
   {
     uTexture: new THREE.Texture(),
     uDepthMap: new THREE.Texture(),
-    uHelmet: new THREE.Texture(),
     uMouse: new THREE.Vector2(0, 0),
     uThreshold: new THREE.Vector2(0, 0),
     uResolution: new THREE.Vector2(1, 1),
@@ -26,7 +25,6 @@ const ParallaxMaterial = shaderMaterial(
   `
     uniform sampler2D uTexture;
     uniform sampler2D uDepthMap;
-    uniform sampler2D uHelmet;
     uniform vec2 uMouse;
     uniform vec2 uThreshold;
     uniform vec2 uResolution;
@@ -44,37 +42,29 @@ const ParallaxMaterial = shaderMaterial(
     }
 
     void main() {
-      // Calcula UV para cobrir a tela (cover)
+      // 1. Calcular UV base
       vec2 uv = getCoverUv(vUv, uResolution, uImageResolution);
 
-      // --- SEM ZOOM (Tamanho Original) ---
-      
-      // Ler Profundidade
+      // 2. Ler Profundidade
       vec4 depthMap = texture2D(uDepthMap, uv);
       
-      // Calcular Deslocamento
+      // 3. Calcular Deslocamento
       vec2 displacement = uMouse * depthMap.r * uThreshold;
       vec2 displacedUv = uv + displacement;
 
-      // --- TRAVAR BORDAS (Clamp) ---
-      // Impede que a imagem repita ou mostre o fundo se sair do lugar
-      displacedUv = clamp(displacedUv, 0.0, 1.0);
+      // --- CORREÇÃO DE BORDAS (A Mágica) ---
+      // Verificamos se o UV deslocado saiu da área da imagem (0 a 1)
+      // Se saiu, descartamos o pixel (fica transparente/preto) em vez de esticar
+      if (displacedUv.x < 0.0 || displacedUv.x > 1.0 || displacedUv.y < 0.0 || displacedUv.y > 1.0) {
+         // Retorna totalmente transparente
+         gl_FragColor = vec4(0.0, 0.0, 0.0, 0.0);
+         return;
+      }
 
-      // Ler texturas
-      vec4 originalColor = texture2D(uTexture, displacedUv);
-      vec4 helmetColor = texture2D(uHelmet, displacedUv);
+      // 4. Ler textura original (apenas se estiver dentro dos limites)
+      vec4 color = texture2D(uTexture, displacedUv);
 
-      // Lógica do Holofote (Spotlight)
-      vec2 mouseUv = uMouse * 0.5 + 0.5;
-      float aspect = uResolution.x / uResolution.y;
-      vec2 aspectCorrectedUv = vec2(vUv.x * aspect, vUv.y);
-      vec2 aspectCorrectedMouse = vec2(mouseUv.x * aspect, mouseUv.y);
-
-      float dist = distance(aspectCorrectedUv, aspectCorrectedMouse);
-      float spotlight = 1.0 - smoothstep(0.15, 0.35, dist); 
-
-      // Mistura final
-      gl_FragColor = mix(originalColor, helmetColor, spotlight);
+      gl_FragColor = color;
     }
   `
 );
@@ -85,29 +75,26 @@ extend({ ParallaxMaterial });
 interface SceneProps {
   imageSrc: string;
   depthSrc: string;
-  helmetSrc: string;
   threshold: number;
 }
 
-function Scene({ imageSrc, depthSrc, helmetSrc, threshold }: SceneProps) {
+function Scene({ imageSrc, depthSrc, threshold }: SceneProps) {
   const { viewport, size } = useThree();
   const materialRef = useRef<any>(null);
   const mouseRef = useRef(new THREE.Vector2(0, 0));
 
-  const [texture, depth, helmet] = useTexture([imageSrc, depthSrc, helmetSrc]);
+  const [texture, depth] = useTexture([imageSrc, depthSrc]);
 
   useLayoutEffect(() => {
-    // Configura texturas para não repetir
+    // Manter ClampToEdgeWrapping
     texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
     depth.wrapS = depth.wrapT = THREE.ClampToEdgeWrapping;
-    helmet.wrapS = helmet.wrapT = THREE.ClampToEdgeWrapping;
     
     texture.colorSpace = THREE.SRGBColorSpace;
-    helmet.colorSpace = THREE.SRGBColorSpace;
     depth.colorSpace = THREE.NoColorSpace; 
     
     texture.needsUpdate = true;
-  }, [texture, depth, helmet]);
+  }, [texture, depth]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -128,44 +115,39 @@ function Scene({ imageSrc, depthSrc, helmetSrc, threshold }: SceneProps) {
   });
 
   return (
-    <mesh>
+    // position z=0 para o fundo
+    <mesh position={[0, 0, 0]}>
       <planeGeometry args={[viewport.width, viewport.height]} />
       <parallaxMaterial
         ref={materialRef}
         uTexture={texture}
         uDepthMap={depth}
-        uHelmet={helmet}
         uThreshold={[threshold, threshold]}
         toneMapped={false}
+        transparent={true} // Importante para permitir transparência nas bordas
       />
     </mesh>
   );
 }
 
-// --- 3. Componente Principal Exportado ---
-interface ParallaxEffectProps {
-  imageSrc: string;
-  depthSrc: string;
-  helmetSrc: string;
-  threshold?: number;
-  className?: string;
-}
-
-// CERTIFIQUE-SE QUE ESTA LINHA TEM A PALAVRA "export"
+// --- 3. Componente Principal ---
 export function ParallaxEffect({ 
   imageSrc, 
   depthSrc,
-  helmetSrc,
   threshold = 0.015,
   className
-}: ParallaxEffectProps) {
+}: { 
+  imageSrc: string; 
+  depthSrc: string; 
+  threshold?: number; 
+  className?: string; 
+}) {
   return (
     <div className={`w-full h-full ${className}`}>
-      <Canvas style={{ width: '100%', height: '100%' }}>
+      <Canvas style={{ width: '100%', height: '100%' }} gl={{ alpha: true }}>
         <Scene 
           imageSrc={imageSrc} 
           depthSrc={depthSrc} 
-          helmetSrc={helmetSrc} 
           threshold={threshold} 
         />
       </Canvas>
