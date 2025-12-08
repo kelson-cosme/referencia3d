@@ -70,13 +70,6 @@ const DotMaterial = shaderMaterial(
 
 extend({ DotMaterial });
 
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      dotMaterial: any;
-    }
-  }
-}
 
 // --- Cena com Animação Automática ---
 interface SceneProps {
@@ -123,12 +116,16 @@ function Scene({ trailSize, maxAge, interpolate, easingFunction, imageSrc }: Sce
     return () => window.removeEventListener('mousemove', resetTimer);
   }, []);
 
-  useFrame((state) => {
-    // Atualizar uniformes
-    if (materialRef.current) {
-      materialRef.current.resolution.set(size.width * viewport.dpr, size.height * viewport.dpr);
-      materialRef.current.imageResolution.set(imageTexture.image.width, imageTexture.image.height);
-    }
+useFrame((state) => {
+  // Atualizar uniformes
+  if (materialRef.current) {
+    materialRef.current.resolution.set(size.width * viewport.dpr, size.height * viewport.dpr);
+    // CORREÇÃO AQUI: Cast para HTMLImageElement
+    materialRef.current.imageResolution.set(
+      (imageTexture.image as HTMLImageElement).width, 
+      (imageTexture.image as HTMLImageElement).height
+    );
+  }
 
     // --- LÓGICA DE MOVIMENTO AUTOMÁTICO (ZIG ZAG) ---
     const now = Date.now();

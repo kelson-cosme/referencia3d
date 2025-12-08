@@ -106,11 +106,15 @@ function Scene({ imageSrc, depthSrc, threshold }: SceneProps) {
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
-  useFrame(() => {
+useFrame(() => {
     if (materialRef.current) {
       materialRef.current.uMouse.lerp(mouseRef.current, 0.08);
       materialRef.current.uResolution.set(size.width, size.height);
-      materialRef.current.uImageResolution.set(texture.image.width, texture.image.height); 
+      // CORREÇÃO AQUI: Cast para HTMLImageElement
+      materialRef.current.uImageResolution.set(
+        (texture.image as HTMLImageElement).width, 
+        (texture.image as HTMLImageElement).height
+      ); 
     }
   });
 

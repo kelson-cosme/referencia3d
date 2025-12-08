@@ -115,14 +115,6 @@ const TopoMaterial = shaderMaterial(
 
 extend({ TopoMaterial });
 
-declare global {
-  namespace JSX {
-    interface IntrinsicElements {
-      topoMaterial: any;
-    }
-  }
-}
-
 function Scene() {
   const materialRef = useRef<any>(null);
 
