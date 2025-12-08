@@ -70,7 +70,6 @@ const DotMaterial = shaderMaterial(
 
 extend({ DotMaterial });
 
-
 // --- Cena com Animação Automática ---
 interface SceneProps {
   trailSize: number;
@@ -116,42 +115,38 @@ function Scene({ trailSize, maxAge, interpolate, easingFunction, imageSrc }: Sce
     return () => window.removeEventListener('mousemove', resetTimer);
   }, []);
 
-useFrame((state) => {
-  // Atualizar uniformes
-  if (materialRef.current) {
-    materialRef.current.resolution.set(size.width * viewport.dpr, size.height * viewport.dpr);
-    // CORREÇÃO AQUI: Cast para HTMLImageElement
-    materialRef.current.imageResolution.set(
-      (imageTexture.image as HTMLImageElement).width, 
-      (imageTexture.image as HTMLImageElement).height
-    );
-  }
+  useFrame((state) => {
+    // Atualizar uniformes
+    if (materialRef.current) {
+      materialRef.current.resolution.set(size.width * viewport.dpr, size.height * viewport.dpr);
+      // Cast seguro para HTMLImageElement conforme corrigido anteriormente
+      materialRef.current.imageResolution.set(
+        (imageTexture.image as HTMLImageElement).width, 
+        (imageTexture.image as HTMLImageElement).height
+      );
+    }
 
     // --- LÓGICA DE MOVIMENTO AUTOMÁTICO (ZIG ZAG) ---
     const now = Date.now();
     const idleTime = now - lastInteraction.current;
 
-    // Se estiver inativo por mais de 2 segundos (2000ms)
+    // Se estiver inativo por mais de 2 segundos
     if (idleTime > 2000) {
       isAutoMoving.current = true;
       const t = state.clock.elapsedTime;
 
-      // Cria um movimento em onda (Zig Zag suave)
-      // X oscila rápido (esquerda/direita), Y oscila devagar
-      const autoX = 0.5 + Math.sin(t * 1.5) * 0.4; // Vai de 0.1 a 0.9 na tela
-      const autoY = 0.5 + Math.sin(t * 3.0) * 0.15; // Oscila um pouco no meio
+      const autoX = 0.5 + Math.sin(t * 1.5) * 0.4; 
+      const autoY = 0.5 + Math.sin(t * 3.0) * 0.15;
 
-      // Simula o evento de movimento para o Trail
-      // O 'as any' é necessário porque estamos a criar um evento falso
       onMove({ uv: new THREE.Vector2(autoX, autoY) } as any);
     }
   });
 
-  const scale = Math.max(viewport.width, viewport.height) / 2;
-
+  // CORREÇÃO AQUI: Removemos o cálculo de scale baseado em Math.max
+  // E usamos geometryargs com viewport.width e viewport.height diretos
   return (
-    <mesh scale={[scale, scale, 1]} onPointerMove={onMove}>
-      <planeGeometry args={[2, 2]} />
+    <mesh onPointerMove={onMove}>
+      <planeGeometry args={[viewport.width, viewport.height]} />
       <dotMaterial
         ref={materialRef}
         mouseTrail={trail}
