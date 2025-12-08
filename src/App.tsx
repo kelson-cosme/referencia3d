@@ -43,7 +43,15 @@ function App() {
       </div>
 
       {/* CAMADA 3: UI (Texto e Botões) */}
-
+      <div className="absolute top-8 left-8 z-30 font-serif text-4xl font-bold tracking-tighter text-black pointer-events-none">
+        LANDO<br/>NORRIS
+      </div>
+      
+      <div className="absolute top-8 right-8 z-30 flex gap-4 pointer-events-auto">
+         <button className="bg-[#ccff00] px-6 py-2 font-bold text-black uppercase tracking-wider text-sm rounded hover:bg-[#b3e600] transition cursor-pointer border-none">
+            Store
+         </button>
+      </div>
 
     </div>
   )
